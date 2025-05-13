@@ -20,7 +20,7 @@ def fetch_market_info():
     global KRW_MARKET
     url = "https://api.upbit.com/v1/market/all"
     res = requests.get(url).json()
-    KRW_MARKET = [m for m in res if m['market'].startswith('KRW-') and not m['market_warning'] == 'CAUTION']
+    KRW_MARKET = [m for m in res if m['market'].startswith('KRW-') and m.get('market_warning') != 'CAUTION']
 
 def is_surge_condition(data):
     try:
