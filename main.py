@@ -6,7 +6,7 @@ import time
 
 TELEGRAM_TOKEN = "6437254217:AAF-oFmu6cRrBqEUZ5xwDb2cm7I0XAfdb9w"
 TELEGRAM_CHAT_ID = "1901931119"
-ALERT_INTERVAL = 1800  # 30분 중복 차단
+ALERT_INTERVAL = 1800
 
 last_alert_time = {}
 KRW_MARKET = []
