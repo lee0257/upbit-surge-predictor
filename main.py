@@ -1,3 +1,4 @@
+# 트리거용 커밋
 import asyncio
 import json
 import websockets
