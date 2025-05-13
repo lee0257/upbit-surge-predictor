@@ -26,7 +26,7 @@ def is_surge_condition(data):
     try:
         market = data['code']
         now_price = float(data['trade_price'])
-        acc_volume = float(data['acc_trade_price_24h'])
+        acc_volume = float(data.get('acc_trade_price_24h', 0))
         ask_bid = data['ask_bid']
         if acc_volume < 500000000:
             return False
