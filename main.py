@@ -1,71 +1,74 @@
-# 트리거용 커밋
-import asyncio
 import json
-import websockets
-import requests
 import time
+import requests
 
-TELEGRAM_TOKEN = "6437254217:AAF-oFmu6cRrBqEUZ5xwDb2cm7I0XAfdb9w"
-TELEGRAM_CHAT_ID = "1901931119"
-ALERT_INTERVAL = 1800
+with open("config.json", "r") as f:
+    config = json.load(f)
 
-last_alert_time = {}
-KRW_MARKET = []
+TELEGRAM_BOT_TOKEN = config["TELEGRAM_BOT_TOKEN"]
+TELEGRAM_CHAT_ID = config["TELEGRAM_CHAT_ID"]
 
-def send_telegram_message(message):
-    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
-    payload = {"chat_id": TELEGRAM_CHAT_ID, "text": message}
-    requests.post(url, data=payload)
+def get_json(url):
+    return requests.get(url).json()
 
-def fetch_market_info():
-    global KRW_MARKET
+def get_tickers():
     url = "https://api.upbit.com/v1/market/all"
-    res = requests.get(url).json()
-    KRW_MARKET = [m for m in res if m['market'].startswith('KRW-') and m.get('market_warning') != 'CAUTION']
+    return [x['market'] for x in get_json(url) if x['market'].startswith("KRW-")]
 
-def is_surge_condition(data):
-    try:
-        market = data['code']
-        now_price = float(data['trade_price'])
-        acc_volume = float(data.get('acc_trade_price_24h', 0))
-        ask_bid = data['ask_bid']
-        if acc_volume < 500000000:
-            return False
-        now = time.time()
-        if market in last_alert_time and now - last_alert_time[market] < ALERT_INTERVAL:
-            return False
-        if ask_bid == "BID":
-            last_alert_time[market] = now
-            return True
-        return False
-    except Exception as e:
-        print("조건 체크 오류:", e)
-        return False
+def get_price_data(ticker):
+    url = f"https://api.upbit.com/v1/ticker?markets={ticker}"
+    data = get_json(url)[0]
+    return {
+        "ticker": ticker,
+        "trade_price": data['trade_price'],
+        "acc_trade_price_24h": data['acc_trade_price_24h']
+    }
 
-def format_message(data):
-    market = data['code']
-    price = int(data['trade_price'])
-    name = next((m['korean_name'] for m in KRW_MARKET if m['market'] == market), market)
-    return f"[선행급등포착]\n- 코인명: {name}\n- 현재가: {price}원\n- 추천 이유: 매수세 유입 + 거래대금 기준 초과"
+def get_orderbook(ticker):
+    url = f"https://api.upbit.com/v1/orderbook?markets={ticker}"
+    return get_json(url)[0]
 
-async def run():
-    fetch_market_info()
-    codes = [m['market'] for m in KRW_MARKET]
-    url = "wss://api.upbit.com/websocket/v1"
-    while True:
-        try:
-            async with websockets.connect(url) as ws:
-                subscribe = [{"ticket": "test"}, {"type": "trade", "codes": codes}]
-                await ws.send(json.dumps(subscribe))
-                while True:
-                    data = await ws.recv()
-                    parsed = json.loads(data)
-                    if is_surge_condition(parsed):
-                        msg = format_message(parsed)
-                        send_telegram_message(msg)
-        except Exception as e:
-            print("WebSocket 오류 발생:", e)
-            await asyncio.sleep(3)
+def detect_signals():
+    results = []
+    for ticker in get_tickers():
+        data = get_price_data(ticker)
+        ob = get_orderbook(ticker)
+        buy_sum = sum([o['bid_size'] for o in ob['orderbook_units'][:5]])
+        sell_sum = sum([o['ask_size'] for o in ob['orderbook_units'][:5]])
+        ratio = buy_sum / (sell_sum + 1e-6)
+
+        if data['acc_trade_price_24h'] > 1_200_000_000:
+            if ratio > 1.5:
+                results.append({
+                    "coin": data['ticker'],
+                    "price": data['trade_price'],
+                    "buy_range": f"{int(data['trade_price']*0.995)} ~ {int(data['trade_price']*1.005)}",
+                    "target": int(data['trade_price']*1.03),
+                    "expect": "3% 이상",
+                    "reason": "매수세 급증 + 호가 우위 포착"
+                })
+    return results
+
+def send_telegram_message(signal):
+    msg = f"""[선행급등포착]
+- 코인명: {signal['coin']}
+- 현재가: {signal['price']}원
+- 매수 추천가: {signal['buy_range']}원
+- 목표 매도가: {signal['target']}원
+- 예상 수익률: {signal['expect']}
+- 예상 소요 시간: 10분 내
+- 추천 이유: {signal['reason']}"""
+    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
+    data = {"chat_id": TELEGRAM_CHAT_ID, "text": msg}
+    requests.post(url, data=data)
 
 if __name__ == "__main__":
-    asyncio.run(run())
+    while True:
+        try:
+            signals = detect_signals()
+            for signal in signals:
+                send_telegram_message(signal)
+            time.sleep(60)
+        except Exception as e:
+            print("[오류]", e)
+            time.sleep(30)
