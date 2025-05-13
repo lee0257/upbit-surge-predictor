@@ -1,12 +1,14 @@
-import json
+import os
 import time
 import requests
 
-with open("config.json", "r") as f:
-    config = json.load(f)
+# 환경변수에서 토큰과 채팅 ID 불러오기
+TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
+TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
-TELEGRAM_BOT_TOKEN = config["TELEGRAM_BOT_TOKEN"]
-TELEGRAM_CHAT_ID = config["TELEGRAM_CHAT_ID"]
+if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
+    print("❌ 환경변수 TELEGRAM_BOT_TOKEN 또는 TELEGRAM_CHAT_ID가 설정되지 않았습니다.")
+    exit(1)
 
 def get_json(url):
     return requests.get(url).json()
@@ -50,14 +52,16 @@ def detect_signals():
     return results
 
 def send_telegram_message(signal):
-    msg = f"""[선행급등포착]
-- 코인명: {signal['coin']}
-- 현재가: {signal['price']}원
-- 매수 추천가: {signal['buy_range']}원
-- 목표 매도가: {signal['target']}원
-- 예상 수익률: {signal['expect']}
-- 예상 소요 시간: 10분 내
-- 추천 이유: {signal['reason']}"""
+    msg = (
+        "[선행급등포착]\n"
+        f"- 코인명: {signal['coin']}\n"
+        f"- 현재가: {signal['price']}원\n"
+        f"- 매수 추천가: {signal['buy_range']}원\n"
+        f"- 목표 매도가: {signal['target']}원\n"
+        f"- 예상 수익률: {signal['expect']}\n"
+        f"- 예상 소요 시간: 10분 내\n"
+        f"- 추천 이유: {signal['reason']}"
+    )
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
     data = {"chat_id": TELEGRAM_CHAT_ID, "text": msg}
     requests.post(url, data=data)
